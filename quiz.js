@@ -122,6 +122,56 @@ function atualizarCoracoes() {
     });
 }
 
+function mostrarTelaInicial() {
+    document.body.innerHTML = `
+        <div style="
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            text-align: center;
+            padding: 20px;
+        ">
+            <img src="inicio.png" alt="Quiz!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
+            <button class="button-alt1">Começar</button>
+        </div>
+    `;
+
+    const iniciarBtn = document.querySelector('.button-alt1');
+    iniciarBtn.addEventListener('click', () => {
+        iniciarBtn.classList.add('explosion');
+        setTimeout(() => {
+            iniciarQuiz();
+        }, 1000);
+    });
+}
+
+function iniciarQuiz() {
+    document.body.innerHTML = `
+        <div class="heart-container">
+            <img class="heart" src="coracao.png">
+            <img class="heart" src="coracao.png">
+            <img class="heart" src="coracao.png">
+            <img class="heart" src="coracao.png">
+            <img class="heart" src="coracao.png">
+        </div>
+        <div id="image-container">
+            <div class="message"></div>
+            <div id="button-container"></div>
+        </div>
+        <audio id="som-acerto" src="acerto.mp3"></audio>
+        <audio id="som-erro" src="erro.mp3"></audio>
+    `;
+
+    erros = 0;
+    indiceAtual = 0;
+    perguntasSelecionadas = embaralharArray([...perguntas]).slice(0, 5);
+
+    atualizarCoracoes();
+    mostrarPergunta();
+}
+
 function mostrarTelaFinal() {
     document.body.innerHTML = `
         <div style="
@@ -133,7 +183,7 @@ function mostrarTelaFinal() {
             text-align: center;
             padding: 20px;
         ">
-            <img src="fim.jpg" alt="Você acabou!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
+            <img src="fim.jpg" alt="Fim!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
             <button class="button-alt1">Reiniciar</button>
         </div>
     `;
@@ -159,7 +209,7 @@ function mostrarTelaFalha() {
             text-align: center;
             padding: 20px;
         ">
-            <img src="errou.jpg" alt="Você falhou!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
+            <img src="errou.jpg" alt="Errou!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
             <button class="button-alt1">Tentar novamente</button>
         </div>
     `;
@@ -234,9 +284,7 @@ window.onload = () => {
         const el = document.documentElement;
         const requestMethod = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
         if (requestMethod) requestMethod.call(el);
-    });
+    }, { once: true });
 
-    perguntasSelecionadas = embaralharArray([...perguntas]).slice(0, 5);
-    atualizarCoracoes();
-    mostrarPergunta();
+    mostrarTelaInicial();
 };
