@@ -194,7 +194,10 @@ function mostrarPergunta() {
         const isCorreta = alt.originalIndex === perguntaAtual.correta;
         botao.className = isCorreta ? "button-alt1" : "button-alt2";
 
-        botao.addEventListener('click', () => {
+        botao.addEventListener('click', function handleClick() {
+    if (botao.classList.contains('clicado')) return;
+    botao.classList.add('clicado');
+    botao.classList.add('hovered');
             if (isCorreta) {
                 document.getElementById('som-acerto').play();
                 botao.classList.add('explosion');

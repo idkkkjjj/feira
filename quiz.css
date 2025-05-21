@@ -124,51 +124,23 @@ button:focus {
     background: rgba(240, 248, 255, 0.5);
 }
 
-.button-alt1:hover {
+.button-alt1.hovered {
     background: #338033;
 }
 
-.button-alt2:hover {
+.button-alt2.hovered {
     background: #803339;
 }
 
-.button-alt1::before, .button-alt2::before {
-    content: '';
-    display: block;
-    position: absolute;
-    background: rgba(255, 255, 255, 0.3);
-    width: 60px;
-    height: 100%;
-    left: 0;
-    top: 0;
-    opacity: .5;
-    filter: blur(30px);
-    transform: translateX(-100px) skewX(-15deg);
-}
-
-.button-alt1::after, .button-alt2::after {
-    content: '';
-    display: block;
-    position: absolute;
-    background: rgba(255, 255, 255, 0.1);
-    width: 30px;
-    height: 100%;
-    left: 30px;
-    top: 0;
-    opacity: 0;
-    filter: blur(5px);
-    transform: translateX(-100px) skewX(-15deg);
-}
-
-.button-alt1:hover::before,
-.button-alt2:hover::before {
+.button-alt1.hovered::before,
+.button-alt2.hovered::before {
     transform: translateX(300px) skewX(-15deg);
     opacity: 0.6;
     transition: .7s;
 }
 
-.button-alt1:hover::after,
-.button-alt2:hover::after {
+.button-alt1.hovered::after,
+.button-alt2.hovered::after {
     transform: translateX(300px) skewX(-15deg);
     opacity: 1;
     transition: .7s;
