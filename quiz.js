@@ -183,7 +183,7 @@ function mostrarTelaFinal() {
             text-align: center;
             padding: 20px;
         ">
-            <img src="fim.jpg" alt="Fim!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
+            <img src="fim.jpg" alt="Fim!" style="max-width: 50%; height: auto; margin-bottom: 30px;">
             <button class="button-alt1">Reiniciar</button>
         </div>
     `;
@@ -209,7 +209,7 @@ function mostrarTelaFalha() {
             text-align: center;
             padding: 20px;
         ">
-            <img src="errou.jpg" alt="Errou!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
+            <img src="errou.jpg" alt="Errou!" style="max-width: 50%; height: auto; margin-bottom: 30px;">
             <button class="button-alt1">Tentar novamente</button>
         </div>
     `;
