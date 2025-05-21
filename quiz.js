@@ -133,7 +133,7 @@ function mostrarTelaInicial() {
             text-align: center;
             padding: 20px;
         ">
-            <img src="inicio.png" alt="Quiz!" style="max-width: 100%; height: auto; margin-bottom: 30px;">
+            <img src="inicio.png" alt="Quiz!" style="max-width: 50%; height: auto; margin-bottom: 30px;">
             <button class="button-alt1">Começar</button>
         </div>
     `;
