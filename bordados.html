@@ -1,85 +1,119 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8">
-  <title>Visualizador de Bordados</title>
-  <style>
-    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
-    canvas { border: 1px solid #000; margin-top: 20px; }
-    #info { margin-top: 20px; text-align: left; display: inline-block; }
-    button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
-    #status { margin-top: 15px; font-weight: bold; }
-    .ok { color: green; }
-    .error { color: red; }
-    .loading { color: orange; }
-  </style>
+<meta charset="UTF-8">
+<title>Visualizador de Bordados com ZIP/RAR</title>
+<style>
+body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+canvas { border: 1px solid #000; margin-top: 20px; }
+#info { margin-top: 20px; text-align: left; display: inline-block; }
+button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
+#status { margin-top: 15px; font-weight: bold; }
+.archive-file { cursor: pointer; color: blue; text-decoration: underline; }
+.archive-file:hover { color: darkblue; }
+.ok { color: green; }
+.error { color: red; }
+.loading { color: orange; }
+</style>
 </head>
 <body>
-  <h1>Visualizador de Bordados</h1>
+<h1>Visualizador de Bordados</h1>
 
-  <input type="file" id="fileInput" accept=".pes,.dst,.exp,.jef,.vp3,.hus,.pcs,.pcm,.sew,.shv,.vip,.xxx,.pec" />
-  <br>
-  <button id="confirmBtn">Confirmar Arquivo</button>
+<input type="file" id="fileInput" accept=".pes,.dst,.exp,.jef,.vp3,.hus,.pcs,.pcm,.sew,.shv,.vip,.xxx,.pec,.zip,.rar" />
+<br>
+<button id="confirmBtn">Confirmar Arquivo</button>
 
-  <br>
-  <canvas id="canvas" width="500" height="500"></canvas>
+<canvas id="canvas" width="500" height="500"></canvas>
 
-  <div id="status">⏳ Aguardando seleção de arquivo...</div>
-  <div id="info"></div>
+<div id="status">⏳ Aguardando seleção de arquivo...</div>
+<div id="info"></div>
+<div id="archiveList"></div>
 
-  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
-  <script>
-    let pyodideReadyPromise = loadPyodide();
-    const fileInput = document.getElementById("fileInput");
-    const confirmBtn = document.getElementById("confirmBtn");
-    const canvas = document.getElementById("canvas");
-    const ctx = canvas.getContext("2d");
-    const infoDiv = document.getElementById("info");
-    const statusDiv = document.getElementById("status");
-    let selectedFile = null;
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
-    function setStatus(msg, cls="loading") {
-      statusDiv.textContent = msg;
-      statusDiv.className = cls;
+<script>
+let pyodideReadyPromise = loadPyodide();
+const fileInput = document.getElementById("fileInput");
+const confirmBtn = document.getElementById("confirmBtn");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const infoDiv = document.getElementById("info");
+const statusDiv = document.getElementById("status");
+const archiveList = document.getElementById("archiveList");
+const supportedFormats = ['pes','dst','exp','jef','vp3','hus','pcs','pcm','sew','shv','vip','xxx','pec'];
+
+let selectedFile = null;
+let zipFilesMap = {}; // caso seja ZIP, armazena arquivos
+
+function setStatus(msg, cls="loading") {
+  statusDiv.textContent = msg;
+  statusDiv.className = cls;
+}
+
+fileInput.addEventListener("change", async (e) => {
+  selectedFile = e.target.files[0];
+  archiveList.innerHTML = "";
+  setStatus("📂 Arquivo selecionado, clique em Confirmar.", "loading");
+
+  if(!selectedFile) return;
+
+  const name = selectedFile.name.toLowerCase();
+  if(name.endsWith(".zip")) {
+    const jszip = new JSZip();
+    const zip = await jszip.loadAsync(selectedFile);
+    zipFilesMap = {};
+    const files = Object.keys(zip.files).filter(f => supportedFormats.includes(f.split('.').pop().toLowerCase()));
+    if(files.length === 0) {
+      archiveList.innerHTML = "❌ Nenhum arquivo suportado encontrado no ZIP.";
+    } else {
+      archiveList.innerHTML = "<h3>Arquivos suportados no ZIP:</h3><ul>" +
+        files.map(f => `<li class="archive-file" data-file="${f}">${f}</li>`).join("") +
+        "</ul>";
+      files.forEach(f => zipFilesMap[f] = zip.files[f]);
     }
+  } else if(name.endsWith(".rar")) {
+    archiveList.innerHTML = "⚠ RAR ainda não implementado, mas é possível com unrar.js";
+  }
+});
 
-    fileInput.addEventListener("change", (e) => {
-      selectedFile = e.target.files[0];
-      setStatus("📂 Arquivo selecionado, clique em Confirmar.", "loading");
-    });
+archiveList.addEventListener("click", async (e) => {
+  if(e.target.classList.contains("archive-file")) {
+    const fileName = e.target.dataset.file;
+    const fileData = await zipFilesMap[fileName].async("uint8array");
+    selectedFile = new File([fileData], fileName);
+    setStatus(`📂 Arquivo "${fileName}" selecionado do ZIP. Clique em Confirmar.`, "loading");
+  }
+});
 
-    confirmBtn.addEventListener("click", async () => {
-      if (!selectedFile) {
-        alert("Selecione um arquivo de bordado primeiro!");
-        return;
-      }
+confirmBtn.addEventListener("click", async () => {
+  if (!selectedFile) {
+    alert("Selecione um arquivo de bordado primeiro!");
+    return;
+  }
 
-      try {
-        setStatus("⏳ Carregando Pyodide...", "loading");
-        const pyodide = await pyodideReadyPromise;
+  try {
+    setStatus("⏳ Carregando Pyodide...", "loading");
+    const pyodide = await pyodideReadyPromise;
 
-        setStatus("⏳ Instalando pyembroidery...", "loading");
-        await pyodide.loadPackage("micropip");
-        const micropip = pyodide.pyimport("micropip");
-        await micropip.install("pyembroidery");
+    setStatus("⏳ Instalando pyembroidery...", "loading");
+    await pyodide.loadPackage("micropip");
+    const micropip = pyodide.pyimport("micropip");
+    await micropip.install("pyembroidery");
 
-        setStatus("⏳ Lendo arquivo de bordado...", "loading");
-        const arrayBuffer = await selectedFile.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        pyodide.FS.writeFile("temp_input", bytes);
+    setStatus("⏳ Lendo arquivo de bordado...", "loading");
+    const arrayBuffer = await selectedFile.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    pyodide.FS.writeFile("temp_input", bytes);
 
-        const result = pyodide.runPython(`
+    const result = pyodide.runPython(`
 from pyembroidery import read, write
 import json
 
 try:
-    # Lê qualquer formato suportado
     pattern = read("temp_input")
+    pattern.write("temp.pes")  # converte pra PES
 
-    # Salva como PES temporário
-    pattern.write("temp.pes")
-
-    # Obtém bounds e informações
     min_x, min_y, max_x, max_y = pattern.bounds()
     width_mm = max_x - min_x
     height_mm = max_y - min_y
@@ -101,65 +135,10 @@ except Exception as e:
     result = json.dumps({"error": str(e)})
 
 result
-        `);
+    `);
 
-        const data = JSON.parse(result);
+    const data = JSON.parse(result);
 
-        if (data.error) {
-          setStatus("❌ Erro ao ler bordado: " + data.error, "error");
-          return;
-        }
-
-        // Normaliza coordenadas
-        const xs = data.stitches.map(s => s[0]);
-        const ys = data.stitches.map(s => s[1]);
-        const minX = Math.min(...xs);
-        const maxX = Math.max(...xs);
-        const minY = Math.min(...ys);
-        const maxY = Math.max(...ys);
-        const width = maxX - minX;
-        const height = maxY - minY;
-        const scale = Math.min(canvas.width / width, canvas.height / height) * 0.9;
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        let colorIndex = 0;
-        ctx.beginPath();
-        ctx.strokeStyle = data.colors[colorIndex]?.hex || "black";
-
-        for (let i = 1; i < data.stitches.length; i++) {
-          const [x1, y1, cmd1] = data.stitches[i - 1];
-          const [x2, y2, cmd2] = data.stitches[i];
-
-          if (cmd2 === 2) { // COLOR_CHANGE
-            ctx.stroke();
-            colorIndex++;
-            ctx.beginPath();
-            ctx.strokeStyle = data.colors[colorIndex]?.hex || "black";
-            continue;
-          }
-
-          ctx.moveTo((x1 - minX) * scale + 20, (y1 - minY) * scale + 20);
-          ctx.lineTo((x2 - minX) * scale + 20, (y2 - minY) * scale + 20);
-        }
-        ctx.stroke();
-
-        setStatus("✅ Sucesso: bordado carregado!", "ok");
-
-        infoDiv.innerHTML = `
-          <h2>Informações do Bordado</h2>
-          <p><b>Largura:</b> ${(data.width_mm / 10).toFixed(2)} cm</p>
-          <p><b>Altura:</b> ${(data.height_mm / 10).toFixed(2)} cm</p>
-          <p><b>Número de cores:</b> ${data.num_colors}</p>
-          <p><b>Total de pontos:</b> ${data.num_stitches}</p>
-          <h3>Cores:</h3>
-          <ul>
-            ${data.colors.map(c => `<li><span style="color:${c.hex}">⬤</span> ${c.name || "Cor"} (${c.hex})</li>`).join("")}
-          </ul>
-        `;
-      } catch (err) {
-        setStatus("❌ Erro geral: " + err, "error");
-      }
-    });
-  </script>
-</body>
-</html>
+    if (data.error) {
+      setStatus("❌ Erro ao ler bordado: " + data.error, "error");
+      return;
