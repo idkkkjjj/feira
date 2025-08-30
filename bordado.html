@@ -27,7 +27,6 @@
   <div id="status">⏳ Aguardando seleção de arquivo...</div>
   <div id="info"></div>
 
-  <!-- Pyodide (Python no browser) -->
   <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
   <script>
     let pyodideReadyPromise = loadPyodide();
@@ -72,6 +71,7 @@
         const result = pyodide.runPython(`
 from pyembroidery import read
 import json
+
 try:
     pattern = read("temp.pes")
 
@@ -83,7 +83,7 @@ try:
     stitches = [[float(x), float(y), int(cmd)] for x, y, cmd in pattern.stitches]
     colors = [{"name": t.description, "hex": "#{:06X}".format(t.color)} for t in pattern.threadlist]
 
-    json.dumps({
+    result = json.dumps({
         "width": width,
         "height": height,
         "num_colors": num_colors,
@@ -92,7 +92,9 @@ try:
         "colors": colors
     })
 except Exception as e:
-    json.dumps({"error": str(e)})
+    result = json.dumps({"error": str(e)})
+
+result
         `);
 
         const data = JSON.parse(result);
