@@ -27,6 +27,7 @@ button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/unrar-js@0.3.0/dist/unrar.js"></script>
 
 <script>
 let pyodideReadyPromise = loadPyodide();
@@ -38,7 +39,7 @@ const statusDiv = document.getElementById("status");
 const archiveList = document.getElementById("archiveList");
 
 const supportedFormats = ['pes','dst','exp','jef','vp3','hus','pcs','pcm','sew','shv','vip','xxx','pec'];
-let zipFilesMap = {};
+let archiveFilesMap = {};
 let selectedFile = null;
 
 function setStatus(msg, cls="loading") {
@@ -151,26 +152,46 @@ fileInput.addEventListener("change", async (e)=>{
   infoDiv.innerHTML = "";
   if(!selectedFile) return;
 
-  const name = selectedFile.name.toLowerCase();
-  if(supportedFormats.includes(name.split('.').pop())){
-    // arquivo compatível direto
+  const ext = selectedFile.name.split('.').pop().toLowerCase();
+
+  if(supportedFormats.includes(ext)){
     renderEmbroidery(selectedFile);
-  } else if(name.endsWith(".zip")){
+  } else if(ext === "zip"){
     setStatus("⏳ Extraindo ZIP...", "loading");
     const jszip = new JSZip();
     const zip = await jszip.loadAsync(selectedFile);
-    zipFilesMap = {};
+    archiveFilesMap = {};
     const files = Object.keys(zip.files).filter(f=>supportedFormats.includes(f.split('.').pop().toLowerCase()));
     if(files.length===0){
       archiveList.innerHTML="❌ Nenhum arquivo suportado encontrado no ZIP.";
     }else{
       archiveList.innerHTML="<h3>Arquivos compatíveis no ZIP:</h3><ul>"+files.map(f=>`<li class="archive-file" data-file="${f}">${f}</li>`).join("")+"</ul>";
-      files.forEach(f=>zipFilesMap[f]=zip.files[f]);
+      files.forEach(f=>archiveFilesMap[f]=zip.files[f]);
       setStatus("📂 Clique em um arquivo para abrir.", "loading");
     }
-  } else if(name.endsWith(".rar")){
-    archiveList.innerHTML="⚠ RAR não suportado ainda.";
-    setStatus("❌ RAR não suportado.", "error");
+  } else if(ext === "rar"){
+    setStatus("⏳ Extraindo RAR...", "loading");
+    const reader = new FileReader();
+    reader.onload = function(event){
+      try{
+        const arrayBuffer = event.target.result;
+        const extractor = new Unrar(arrayBuffer);
+        const files = extractor.getFileList().filter(f=>supportedFormats.includes(f.name.split('.').pop().toLowerCase()));
+        archiveFilesMap = {};
+        files.forEach(f=>{
+          archiveFilesMap[f.name] = f;
+        });
+        if(files.length===0){
+          archiveList.innerHTML="❌ Nenhum arquivo suportado no RAR.";
+        }else{
+          archiveList.innerHTML="<h3>Arquivos compatíveis no RAR:</h3><ul>"+files.map(f=>`<li class="archive-file" data-file="${f.name}">${f.name}</li>`).join("")+"</ul>";
+          setStatus("📂 Clique em um arquivo para abrir.", "loading");
+        }
+      }catch(err){
+        setStatus("❌ Erro ao extrair RAR: "+err,"error");
+      }
+    };
+    reader.readAsArrayBuffer(selectedFile);
   } else{
     setStatus("❌ Arquivo não suportado.", "error");
   }
@@ -179,9 +200,16 @@ fileInput.addEventListener("change", async (e)=>{
 archiveList.addEventListener("click", async (e)=>{
   if(e.target.classList.contains("archive-file")){
     const fileName = e.target.dataset.file;
-    const fileData = await zipFilesMap[fileName].async("uint8array");
-    const fileObj = new File([fileData], fileName);
-    renderEmbroidery(fileObj);
+    const fileDataObj = archiveFilesMap[fileName];
+    if(fileDataObj.constructor.name === "File"){ 
+      // ZIP
+      renderEmbroidery(fileDataObj);
+    } else {
+      // RAR
+      const fileData = fileDataObj.extract(); // unrar-js retorna Uint8Array
+      const fileObj = new File([fileData], fileName);
+      renderEmbroidery(fileObj);
+    }
   }
 });
 </script>
