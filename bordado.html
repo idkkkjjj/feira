@@ -2,12 +2,16 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <title>Visualizador PES</title>
+  <title>Visualizador PES (HTML único)</title>
   <style>
     body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
     canvas { border: 1px solid #000; margin-top: 20px; }
     #info { margin-top: 20px; text-align: left; display: inline-block; }
     button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
+    #status { margin-top: 15px; font-weight: bold; }
+    .ok { color: green; }
+    .error { color: red; }
+    .loading { color: orange; }
   </style>
 </head>
 <body>
@@ -20,84 +24,133 @@
   <br>
   <canvas id="canvas" width="500" height="500"></canvas>
 
+  <div id="status">⏳ Aguardando seleção de arquivo...</div>
   <div id="info"></div>
 
-  <!-- Lib embroidery.js -->
-  <script src="https://cdn.jsdelivr.net/gh/embroidermodder/embroidery.js/embroidery.min.js"></script>
+  <!-- Pyodide (Python no browser) -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
   <script>
+    let pyodideReadyPromise = loadPyodide();
     const fileInput = document.getElementById("fileInput");
     const confirmBtn = document.getElementById("confirmBtn");
     const canvas = document.getElementById("canvas");
     const ctx = canvas.getContext("2d");
     const infoDiv = document.getElementById("info");
+    const statusDiv = document.getElementById("status");
     let selectedFile = null;
 
-    // Guarda o arquivo selecionado
+    function setStatus(msg, cls="loading") {
+      statusDiv.textContent = msg;
+      statusDiv.className = cls;
+    }
+
     fileInput.addEventListener("change", (e) => {
       selectedFile = e.target.files[0];
+      setStatus("📂 Arquivo selecionado, clique em Confirmar.", "loading");
     });
 
-    // Só carrega quando clicar em confirmar
     confirmBtn.addEventListener("click", async () => {
       if (!selectedFile) {
         alert("Selecione um arquivo PES primeiro!");
         return;
       }
 
-      const arrayBuffer = await selectedFile.arrayBuffer();
-      const embroidery = new Embroidery(arrayBuffer);
-      const stitches = embroidery.stitches;
-      const threads = embroidery.threads;
+      try {
+        setStatus("⏳ Carregando Pyodide...", "loading");
+        const pyodide = await pyodideReadyPromise;
 
-      // Normaliza coordenadas
-      const xs = stitches.map(s => s[0]);
-      const ys = stitches.map(s => s[1]);
-      const minX = Math.min(...xs);
-      const maxX = Math.max(...xs);
-      const minY = Math.min(...ys);
-      const maxY = Math.max(...ys);
+        setStatus("⏳ Instalando pyembroidery...", "loading");
+        await pyodide.loadPackage("micropip");
+        const micropip = pyodide.pyimport("micropip");
+        await micropip.install("pyembroidery");
 
-      const width = maxX - minX;
-      const height = maxY - minY;
+        setStatus("⏳ Lendo arquivo PES...", "loading");
+        const arrayBuffer = await selectedFile.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        pyodide.FS.writeFile("temp.pes", bytes);
 
-      const scale = Math.min(canvas.width / width, canvas.height / height) * 0.9;
+        const result = pyodide.runPython(`
+from pyembroidery import read
+import json
+try:
+    pattern = read("temp.pes")
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    width = pattern.bounds[2] - pattern.bounds[0]
+    height = pattern.bounds[3] - pattern.bounds[1]
+    num_colors = len(pattern.threadlist)
+    num_stitches = len(pattern.stitches)
 
-      // Desenha pontos coloridos conforme sequência de cor
-      let colorIndex = 0;
-      ctx.beginPath();
-      ctx.strokeStyle = threads[colorIndex]?.hex || "black";
+    stitches = [[float(x), float(y), int(cmd)] for x, y, cmd in pattern.stitches]
+    colors = [{"name": t.description, "hex": "#{:06X}".format(t.color)} for t in pattern.threadlist]
 
-      for (let i = 1; i < stitches.length; i++) {
-        const [x1, y1, flag1] = stitches[i - 1];
-        const [x2, y2, flag2] = stitches[i];
+    json.dumps({
+        "width": width,
+        "height": height,
+        "num_colors": num_colors,
+        "num_stitches": num_stitches,
+        "stitches": stitches,
+        "colors": colors
+    })
+except Exception as e:
+    json.dumps({"error": str(e)})
+        `);
 
-        // Se mudar de cor
-        if (flag2 === "COLOR_CHANGE") {
-          ctx.stroke(); // finaliza a cor atual
-          colorIndex++;
-          ctx.beginPath();
-          ctx.strokeStyle = threads[colorIndex]?.hex || "black";
-          continue;
+        const data = JSON.parse(result);
+
+        if (data.error) {
+          setStatus("❌ Erro ao ler PES: " + data.error, "error");
+          return;
         }
 
-        ctx.moveTo((x1 - minX) * scale + 20, (y1 - minY) * scale + 20);
-        ctx.lineTo((x2 - minX) * scale + 20, (y2 - minY) * scale + 20);
+        // Normaliza coordenadas
+        const xs = data.stitches.map(s => s[0]);
+        const ys = data.stitches.map(s => s[1]);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const scale = Math.min(canvas.width / width, canvas.height / height) * 0.9;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        let colorIndex = 0;
+        ctx.beginPath();
+        ctx.strokeStyle = data.colors[colorIndex]?.hex || "black";
+
+        for (let i = 1; i < data.stitches.length; i++) {
+          const [x1, y1, cmd1] = data.stitches[i - 1];
+          const [x2, y2, cmd2] = data.stitches[i];
+
+          if (cmd2 === 2) { // COLOR_CHANGE
+            ctx.stroke();
+            colorIndex++;
+            ctx.beginPath();
+            ctx.strokeStyle = data.colors[colorIndex]?.hex || "black";
+            continue;
+          }
+
+          ctx.moveTo((x1 - minX) * scale + 20, (y1 - minY) * scale + 20);
+          ctx.lineTo((x2 - minX) * scale + 20, (y2 - minY) * scale + 20);
+        }
+        ctx.stroke();
+
+        setStatus("✅ Sucesso: bordado carregado!", "ok");
+
+        infoDiv.innerHTML = `
+          <h2>Informações do Bordado</h2>
+          <p><b>Largura:</b> ${data.width.toFixed(2)} mm</p>
+          <p><b>Altura:</b> ${data.height.toFixed(2)} mm</p>
+          <p><b>Número de cores:</b> ${data.num_colors}</p>
+          <p><b>Total de pontos:</b> ${data.num_stitches}</p>
+          <h3>Cores:</h3>
+          <ul>
+            ${data.colors.map(c => `<li><span style="color:${c.hex}">⬤</span> ${c.name || "Cor"} (${c.hex})</li>`).join("")}
+          </ul>
+        `;
+      } catch (err) {
+        setStatus("❌ Erro geral: " + err, "error");
       }
-      ctx.stroke();
-
-      // Mostra infos
-      const numCores = threads.length;
-      const numPontos = stitches.length;
-
-      infoDiv.innerHTML = `
-        <h2>Informações do Bordado</h2>
-        <p><b>Largura:</b> ${width.toFixed(2)} mm</p>
-        <p><b>Altura:</b> ${height.toFixed(2)} mm</p>
-        <p><b>Número de cores:</b> ${numCores}</p>
-        <p><b>Total de pontos:</b> ${numPontos}</p>
-      `;
     });
   </script>
 </body>
