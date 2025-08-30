@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Visualizador de Bordados Inteligente</title>
+<title>Visualizador de Bordados Full</title>
 <style>
 body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
 canvas { border: 1px solid #000; margin-top: 20px; }
@@ -17,9 +17,12 @@ button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
 </style>
 </head>
 <body>
-<h1>Visualizador de Bordados Inteligente</h1>
+<h1>Visualizador de Bordados Full</h1>
 
 <input type="file" id="fileInput" accept=".pes,.dst,.exp,.jef,.vp3,.hus,.pcs,.pcm,.sew,.shv,.vip,.xxx,.pec,.zip,.rar" />
+<br>
+<button id="confirmBtn">Confirmar Arquivo</button>
+
 <canvas id="canvas" width="500" height="500"></canvas>
 <div id="status">⏳ Aguardando seleção de arquivo...</div>
 <div id="info"></div>
@@ -27,42 +30,123 @@ button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
 
 <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/unrar-js@0.3.0/dist/unrar.js"></script>
+<script type="module">
+import { Unrar } from 'https://cdn.jsdelivr.net/npm/unrar-js@0.3.0/dist/unrar.esm.js';
 
-<script>
-let pyodideReadyPromise = loadPyodide();
 const fileInput = document.getElementById("fileInput");
+const confirmBtn = document.getElementById("confirmBtn");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const infoDiv = document.getElementById("info");
 const statusDiv = document.getElementById("status");
 const archiveList = document.getElementById("archiveList");
 
+let pyodideReadyPromise = loadPyodide();
 const supportedFormats = ['pes','dst','exp','jef','vp3','hus','pcs','pcm','sew','shv','vip','xxx','pec'];
-let archiveFilesMap = {};
-let selectedFile = null;
 
-function setStatus(msg, cls="loading") {
-  statusDiv.textContent = msg;
-  statusDiv.className = cls;
+let selectedFile = null;
+let archiveFilesMap = {};
+let currentArchiveType = null; // "zip" ou "rar"
+let selectedArchiveFileName = null;
+
+function setStatus(msg, cls="loading"){
+    statusDiv.textContent = msg;
+    statusDiv.className = cls;
 }
 
-async function renderEmbroidery(file) {
-  try {
-    setStatus("⏳ Carregando Pyodide...", "loading");
-    const pyodide = await pyodideReadyPromise;
+fileInput.addEventListener("change", async (e)=>{
+    selectedFile = e.target.files[0];
+    archiveFilesMap = {};
+    selectedArchiveFileName = null;
+    currentArchiveType = null;
+    archiveList.innerHTML = "";
+    infoDiv.innerHTML = "";
 
-    setStatus("⏳ Instalando pyembroidery...", "loading");
-    await pyodide.loadPackage("micropip");
-    const micropip = pyodide.pyimport("micropip");
-    await micropip.install("pyembroidery");
+    if(!selectedFile) return;
 
-    setStatus("⏳ Lendo arquivo de bordado...", "loading");
-    const arrayBuffer = await file.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    pyodide.FS.writeFile("temp_input", bytes);
+    const ext = selectedFile.name.split('.').pop().toLowerCase();
 
-    const result = pyodide.runPython(`
+    if(supportedFormats.includes(ext)){
+        currentArchiveType = "single";
+        setStatus("📂 Arquivo compatível selecionado. Clique em Confirmar.", "loading");
+    } else if(ext === "zip"){
+        currentArchiveType = "zip";
+        setStatus("⏳ Extraindo ZIP...", "loading");
+        const jszip = new JSZip();
+        const zip = await jszip.loadAsync(selectedFile);
+        const files = Object.keys(zip.files).filter(f=>supportedFormats.includes(f.split('.').pop().toLowerCase()));
+        if(files.length === 0){
+            archiveList.innerHTML="❌ Nenhum arquivo compatível encontrado no ZIP.";
+        }else{
+            archiveList.innerHTML="<h3>Arquivos compatíveis no ZIP:</h3><ul>"+files.map(f=>`<li class="archive-file" data-file="${f}">${f}</li>`).join("")+"</ul>";
+            files.forEach(f=>archiveFilesMap[f]=zip.files[f]);
+            setStatus("📂 Clique em um arquivo do ZIP e depois em Confirmar.", "loading");
+        }
+    } else if(ext === "rar"){
+        currentArchiveType = "rar";
+        setStatus("⏳ Extraindo RAR...", "loading");
+        const reader = new FileReader();
+        reader.onload = function(event){
+            const arrayBuffer = event.target.result;
+            const extractor = new Unrar(new Uint8Array(arrayBuffer));
+            const files = extractor.getFileList().filter(f=>supportedFormats.includes(f.name.split('.').pop().toLowerCase()));
+            if(files.length === 0){
+                archiveList.innerHTML = "❌ Nenhum arquivo compatível no RAR.";
+            } else {
+                archiveFilesMap = {};
+                files.forEach(f=>archiveFilesMap[f.name] = f);
+                archiveList.innerHTML="<h3>Arquivos compatíveis no RAR:</h3><ul>"+files.map(f=>`<li class="archive-file" data-file="${f.name}">${f.name}</li>`).join("")+"</ul>";
+                setStatus("📂 Clique em um arquivo do RAR e depois em Confirmar.", "loading");
+            }
+        };
+        reader.readAsArrayBuffer(selectedFile);
+    } else{
+        setStatus("❌ Arquivo não suportado.", "error");
+    }
+});
+
+archiveList.addEventListener("click", (e)=>{
+    if(e.target.classList.contains("archive-file")){
+        selectedArchiveFileName = e.target.dataset.file;
+        setStatus(`📂 Arquivo "${selectedArchiveFileName}" selecionado do arquivo compactado. Clique em Confirmar.`, "loading");
+    }
+});
+
+confirmBtn.addEventListener("click", async ()=>{
+    let fileToRender = null;
+    if(currentArchiveType === "single"){
+        fileToRender = selectedFile;
+    } else if(currentArchiveType === "zip" && selectedArchiveFileName){
+        const fileData = await archiveFilesMap[selectedArchiveFileName].async("uint8array");
+        fileToRender = new File([fileData], selectedArchiveFileName);
+    } else if(currentArchiveType === "rar" && selectedArchiveFileName){
+        const f = archiveFilesMap[selectedArchiveFileName];
+        const fileData = f.extract();
+        fileToRender = new File([fileData], selectedArchiveFileName);
+    } else {
+        setStatus("❌ Nenhum arquivo selecionado para abrir.", "error");
+        return;
+    }
+
+    await renderEmbroidery(fileToRender);
+});
+
+async function renderEmbroidery(file){
+    try{
+        setStatus("⏳ Carregando Pyodide...", "loading");
+        const pyodide = await pyodideReadyPromise;
+
+        setStatus("⏳ Instalando pyembroidery...", "loading");
+        await pyodide.loadPackage("micropip");
+        const micropip = pyodide.pyimport("micropip");
+        await micropip.install("pyembroidery");
+
+        setStatus("⏳ Lendo arquivo de bordado...", "loading");
+        const arrayBuffer = await file.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        pyodide.FS.writeFile("temp_input", bytes);
+
+        const result = pyodide.runPython(`
 from pyembroidery import read, write
 import json
 
@@ -87,131 +171,62 @@ try:
 except Exception as e:
     result = json.dumps({"error": str(e)})
 result
-    `);
+        `);
 
-    const data = JSON.parse(result);
+        const data = JSON.parse(result);
 
-    if(data.error){
-      setStatus("❌ Erro ao ler bordado: " + data.error, "error");
-      return;
-    }
+        if(data.error){
+            setStatus("❌ Erro ao ler bordado: "+data.error, "error");
+            return;
+        }
 
-    const xs = data.stitches.map(s => s[0]);
-    const ys = data.stitches.map(s => s[1]);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
-    const width = maxX - minX;
-    const height = maxY - minY;
-    const scale = Math.min(canvas.width / width, canvas.height / height) * 0.9;
+        const xs = data.stitches.map(s=>s[0]);
+        const ys = data.stitches.map(s=>s[1]);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+        const minY = Math.min(...ys);
+        const maxY = Math.max(...ys);
+        const width = maxX - minX;
+        const height = maxY - minY;
+        const scale = Math.min(canvas.width/width, canvas.height/height)*0.9;
 
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    let colorIndex = 0;
-    ctx.beginPath();
-    ctx.strokeStyle = data.colors[colorIndex]?.hex || "black";
-
-    for(let i=1;i<data.stitches.length;i++){
-      const [x1,y1,cmd1] = data.stitches[i-1];
-      const [x2,y2,cmd2] = data.stitches[i];
-
-      if(cmd2 === 2){
-        ctx.stroke();
-        colorIndex++;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        let colorIndex = 0;
         ctx.beginPath();
         ctx.strokeStyle = data.colors[colorIndex]?.hex || "black";
-        continue;
-      }
 
-      ctx.moveTo((x1-minX)*scale+20,(y1-minY)*scale+20);
-      ctx.lineTo((x2-minX)*scale+20,(y2-minY)*scale+20);
-    }
-    ctx.stroke();
-
-    setStatus("✅ Sucesso: bordado carregado!", "ok");
-
-    infoDiv.innerHTML = `
-      <h2>Informações do Bordado</h2>
-      <p><b>Largura:</b> ${(data.width_mm/10).toFixed(2)} cm</p>
-      <p><b>Altura:</b> ${(data.height_mm/10).toFixed(2)} cm</p>
-      <p><b>Número de cores:</b> ${data.num_colors}</p>
-      <p><b>Total de pontos:</b> ${data.num_stitches}</p>
-      <h3>Cores:</h3>
-      <ul>
-        ${data.colors.map(c=>`<li><span style="color:${c.hex}">⬤</span> ${c.name||"Cor"} (${c.hex})</li>`).join("")}
-      </ul>
-    `;
-  } catch(err){
-    setStatus("❌ Erro geral: " + err, "error");
-  }
-}
-
-fileInput.addEventListener("change", async (e)=>{
-  selectedFile = e.target.files[0];
-  archiveList.innerHTML = "";
-  infoDiv.innerHTML = "";
-  if(!selectedFile) return;
-
-  const ext = selectedFile.name.split('.').pop().toLowerCase();
-
-  if(supportedFormats.includes(ext)){
-    renderEmbroidery(selectedFile);
-  } else if(ext === "zip"){
-    setStatus("⏳ Extraindo ZIP...", "loading");
-    const jszip = new JSZip();
-    const zip = await jszip.loadAsync(selectedFile);
-    archiveFilesMap = {};
-    const files = Object.keys(zip.files).filter(f=>supportedFormats.includes(f.split('.').pop().toLowerCase()));
-    if(files.length===0){
-      archiveList.innerHTML="❌ Nenhum arquivo suportado encontrado no ZIP.";
-    }else{
-      archiveList.innerHTML="<h3>Arquivos compatíveis no ZIP:</h3><ul>"+files.map(f=>`<li class="archive-file" data-file="${f}">${f}</li>`).join("")+"</ul>";
-      files.forEach(f=>archiveFilesMap[f]=zip.files[f]);
-      setStatus("📂 Clique em um arquivo para abrir.", "loading");
-    }
-  } else if(ext === "rar"){
-    setStatus("⏳ Extraindo RAR...", "loading");
-    const reader = new FileReader();
-    reader.onload = function(event){
-      try{
-        const arrayBuffer = event.target.result;
-        const extractor = new Unrar(arrayBuffer);
-        const files = extractor.getFileList().filter(f=>supportedFormats.includes(f.name.split('.').pop().toLowerCase()));
-        archiveFilesMap = {};
-        files.forEach(f=>{
-          archiveFilesMap[f.name] = f;
-        });
-        if(files.length===0){
-          archiveList.innerHTML="❌ Nenhum arquivo suportado no RAR.";
-        }else{
-          archiveList.innerHTML="<h3>Arquivos compatíveis no RAR:</h3><ul>"+files.map(f=>`<li class="archive-file" data-file="${f.name}">${f.name}</li>`).join("")+"</ul>";
-          setStatus("📂 Clique em um arquivo para abrir.", "loading");
+        for(let i=1;i<data.stitches.length;i++){
+            const [x1,y1,cmd1] = data.stitches[i-1];
+            const [x2,y2,cmd2] = data.stitches[i];
+            if(cmd2===2){
+                ctx.stroke();
+                colorIndex++;
+                ctx.beginPath();
+                ctx.strokeStyle = data.colors[colorIndex]?.hex || "black";
+                continue;
+            }
+            ctx.moveTo((x1-minX)*scale+20,(y1-minY)*scale+20);
+            ctx.lineTo((x2-minX)*scale+20,(y2-minY)*scale+20);
         }
-      }catch(err){
-        setStatus("❌ Erro ao extrair RAR: "+err,"error");
-      }
-    };
-    reader.readAsArrayBuffer(selectedFile);
-  } else{
-    setStatus("❌ Arquivo não suportado.", "error");
-  }
-});
+        ctx.stroke();
 
-archiveList.addEventListener("click", async (e)=>{
-  if(e.target.classList.contains("archive-file")){
-    const fileName = e.target.dataset.file;
-    const fileDataObj = archiveFilesMap[fileName];
-    if(fileDataObj.constructor.name === "File"){ 
-      // ZIP
-      renderEmbroidery(fileDataObj);
-    } else {
-      // RAR
-      const fileData = fileDataObj.extract(); // unrar-js retorna Uint8Array
-      const fileObj = new File([fileData], fileName);
-      renderEmbroidery(fileObj);
+        setStatus("✅ Sucesso: bordado carregado!", "ok");
+
+        infoDiv.innerHTML=`
+<h2>Informações do Bordado</h2>
+<p><b>Largura:</b> ${(data.width_mm/10).toFixed(2)} cm</p>
+<p><b>Altura:</b> ${(data.height_mm/10).toFixed(2)} cm</p>
+<p><b>Número de cores:</b> ${data.num_colors}</p>
+<p><b>Total de pontos:</b> ${data.num_stitches}</p>
+<h3>Cores:</h3>
+<ul>
+${data.colors.map(c=>`<li><span style="color:${c.hex}">⬤</span> ${c.name||"Cor"} (${c.hex})</li>`).join("")}
+</ul>
+        `;
+    }catch(err){
+        setStatus("❌ Erro geral: "+err,"error");
     }
-  }
-});
+}
 </script>
 </body>
 </html>
