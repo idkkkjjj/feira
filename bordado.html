@@ -75,8 +75,10 @@ import json
 try:
     pattern = read("temp.pes")
 
-    width = pattern.bounds[2] - pattern.bounds[0]
-    height = pattern.bounds[3] - pattern.bounds[1]
+    # Corrigido: bounds é método
+    min_x, min_y, max_x, max_y = pattern.bounds()
+    width = max_x - min_x
+    height = max_y - min_y
     num_colors = len(pattern.threadlist)
     num_stitches = len(pattern.stitches)
 
