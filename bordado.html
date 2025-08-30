@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>Visualizador PES</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+    canvas { border: 1px solid #000; margin-top: 20px; }
+    #info { margin-top: 20px; text-align: left; display: inline-block; }
+    button { margin-top: 10px; padding: 10px 20px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>Visualizador de Bordados PES</h1>
+
+  <input type="file" id="fileInput" accept=".pes" />
+  <br>
+  <button id="confirmBtn">Confirmar Arquivo</button>
+
+  <br>
+  <canvas id="canvas" width="500" height="500"></canvas>
+
+  <div id="info"></div>
+
+  <!-- Lib embroidery.js -->
+  <script src="https://cdn.jsdelivr.net/gh/embroidermodder/embroidery.js/embroidery.min.js"></script>
+  <script>
+    const fileInput = document.getElementById("fileInput");
+    const confirmBtn = document.getElementById("confirmBtn");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const infoDiv = document.getElementById("info");
+    let selectedFile = null;
+
+    // Guarda o arquivo selecionado
+    fileInput.addEventListener("change", (e) => {
+      selectedFile = e.target.files[0];
+    });
+
+    // Só carrega quando clicar em confirmar
+    confirmBtn.addEventListener("click", async () => {
+      if (!selectedFile) {
+        alert("Selecione um arquivo PES primeiro!");
+        return;
+      }
+
+      const arrayBuffer = await selectedFile.arrayBuffer();
+      const embroidery = new Embroidery(arrayBuffer);
+      const stitches = embroidery.stitches;
+      const threads = embroidery.threads;
+
+      // Normaliza coordenadas
+      const xs = stitches.map(s => s[0]);
+      const ys = stitches.map(s => s[1]);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+
+      const width = maxX - minX;
+      const height = maxY - minY;
+
+      const scale = Math.min(canvas.width / width, canvas.height / height) * 0.9;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Desenha pontos coloridos conforme sequência de cor
+      let colorIndex = 0;
+      ctx.beginPath();
+      ctx.strokeStyle = threads[colorIndex]?.hex || "black";
+
+      for (let i = 1; i < stitches.length; i++) {
+        const [x1, y1, flag1] = stitches[i - 1];
+        const [x2, y2, flag2] = stitches[i];
+
+        // Se mudar de cor
+        if (flag2 === "COLOR_CHANGE") {
+          ctx.stroke(); // finaliza a cor atual
+          colorIndex++;
+          ctx.beginPath();
+          ctx.strokeStyle = threads[colorIndex]?.hex || "black";
+          continue;
+        }
+
+        ctx.moveTo((x1 - minX) * scale + 20, (y1 - minY) * scale + 20);
+        ctx.lineTo((x2 - minX) * scale + 20, (y2 - minY) * scale + 20);
+      }
+      ctx.stroke();
+
+      // Mostra infos
+      const numCores = threads.length;
+      const numPontos = stitches.length;
+
+      infoDiv.innerHTML = `
+        <h2>Informações do Bordado</h2>
+        <p><b>Largura:</b> ${width.toFixed(2)} mm</p>
+        <p><b>Altura:</b> ${height.toFixed(2)} mm</p>
+        <p><b>Número de cores:</b> ${numCores}</p>
+        <p><b>Total de pontos:</b> ${numPontos}</p>
+      `;
+    });
+  </script>
+</body>
+</html>
